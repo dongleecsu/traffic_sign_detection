@@ -1,5 +1,6 @@
 import os
-# import cv2
+os.environ['PATH'] = '/home/ld/tf-env/bin:/home/ld/anaconda2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/local/cuda/bin:/usr/lib/jvm/java-7-openjdk-amd64/bin'
+import cv2
 import pickle as pkl
 import matplotlib
 from lxml import etree
@@ -149,3 +150,48 @@ def compute_frame_bbox_F(frame_pos, frame_gt):
         F = 2*precision*recall / (precision + recall)
     return precision, recall, F
 
+def compute_pre_rec_F(frame_pos, frame_cls, gt_pos, gt_cls):
+    centers = []
+    for pos in frame_pos:
+        x_center = pos[0] + pos[2] / 2.
+        y_center = pos[1] + pos[3] / 2.
+        centers.append([x_center, y_center])
+    num_det = len(centers)
+    num_gt = len(gt_cls)
+
+    cls_seen = []
+    tp = 0
+    for gt_p, gt_c in zip(gt_pos, gt_cls):
+        if gt_c in cls_seen:
+            # if gt has duplicated target, remove the seen
+            cls_seen.remove(gt_c)
+        for i, cls_ in enumerate(frame_cls):
+            if cls_ == gt_c and cls_ not in cls_seen:
+                # if the a det has max score and cls is right,
+                # check its bbox.
+                # Note: tf output bbox = [ymin, xmin, ymax, xmax]
+                x_flag = centers[i][0] >= gt_p[0] and centers[i][0] <= gt_p[0] + gt_p[2]
+                y_flag = centers[i][1] >= gt_p[1] and centers[i][1] <= gt_p[1] + gt_p[3]
+                if x_flag and y_flag:
+                    tp += 1
+                    cls_seen.append(cls_)
+    fp = num_det - tp
+    fn = num_gt - tp
+    assert tp >= 0 and fp >=0 and fn >= 0, 'tp, fp, fn computing error'
+    if tp == 0 and fp == 0 and fn == 0:
+        # no target in the image
+        return 1.0, 1.0, 1.0
+    try:
+        precision = float(tp) / (tp + fp)
+    except ZeroDivisionError:
+        precision = 1.0
+    try:
+        recall = float(tp) / (tp + fn)
+    except ZeroDivisionError:
+        recall = 1.0
+    if tp == 0:
+        # supress divide zero error
+        F = 0.0
+    else:
+        F = 2*precision*recall / (precision + recall)
+    return precision, recall, F
